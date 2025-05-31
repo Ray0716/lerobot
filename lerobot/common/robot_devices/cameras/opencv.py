@@ -345,9 +345,10 @@ class OpenCVCamera:
 
         # Using `math.isclose` since actual fps can be a float (e.g. 29.9 instead of 30)
         if self.fps is not None and not math.isclose(self.fps, actual_fps, rel_tol=1e-3):
-            # Using `OSError` since it's a broad that encompasses issues related to device communication
-            raise OSError(
-                f"Can't set {self.fps=} for OpenCVCamera({self.camera_index}). Actual value is {actual_fps}."
+            # Log a warning instead of raising an error if the actual FPS doesn't match the requested FPS
+            import logging
+            logging.warning(
+                f"Requested {self.fps=} for OpenCVCamera({self.camera_index}) but actual value is {actual_fps}. Using actual value."
             )
         if self.capture_width is not None and not math.isclose(
             self.capture_width, actual_width, rel_tol=1e-3

@@ -120,6 +120,66 @@ def save_image(img_array, camera_index, frame_index, images_dir):
     img.save(str(path), quality=100)
 
 
+def create_safe_camera(camera_index=None, fps=None, width=None, height=None, color_mode="rgb", rotation=0, mock=False):
+    """
+    Safely create an OpenCVCamera by first finding available cameras and validating camera indices.
+    
+    This function eliminates the need to use OpenCVCamera(0) directly by:
+    1. Finding all available cameras
+    2. Validating that the requested camera_index exists (or choosing the first available camera)
+    3. Creating a properly configured OpenCVCamera
+
+    Args:
+        camera_index: Optional specific camera index to use. If None, the first available camera will be used.
+        fps: The frames per second, defaults to None (use the default fps of the camera).
+        width: The width of the image, defaults to None (use the default width of the camera).
+        height: The height of the image, defaults to None (use the default height of the camera).
+        color_mode: The color mode, can be "rgb" or "bgr", defaults to "rgb".
+        rotation: The rotation of the image, can be 0, 90, 180, 270, -90, defaults to 0.
+        mock: Whether to use mock cv2 for testing, defaults to False.
+
+    Returns:
+        An OpenCVCamera instance configured with the first available camera or the specified camera_index,
+        or None if no cameras are found.
+    
+    Raises:
+        ValueError: If the specified camera_index does not exist.
+    """
+    # Find all available cameras
+    camera_infos = find_cameras(mock=mock)
+    
+    if not camera_infos:
+        print("No cameras found.")
+        return None
+    
+    available_indices = [cam["index"] for cam in camera_infos]
+    
+    # If camera_index is specified, verify it exists
+    if camera_index is not None:
+        if camera_index not in available_indices:
+            raise ValueError(
+                f"Specified camera_index {camera_index} is not available. Available indices are: {available_indices}"
+            )
+        selected_index = camera_index
+    else:
+        # Use the first available camera
+        selected_index = available_indices[0]
+        print(f"Using first available camera with index {selected_index}")
+    
+    # Create a properly configured camera
+    config = OpenCVCameraConfig(
+        camera_index=selected_index,
+        fps=fps,
+        width=width,
+        height=height,
+        color_mode=color_mode,
+        rotation=rotation,
+        mock=mock
+    )
+    
+    return OpenCVCamera(config)
+
+
 def save_images_from_cameras(
     images_dir: Path,
     camera_ids: list | None = None,

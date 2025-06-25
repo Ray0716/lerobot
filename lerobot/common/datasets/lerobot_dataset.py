@@ -84,9 +84,11 @@ class LeRobotDatasetMetadata:
         revision: str | None = None,
         force_cache_sync: bool = False,
     ):
-        self.repo_id = repo_id
+        # Ensure repo_id is a valid Hugging Face format (no leading slashes)
+        self.repo_id = repo_id.lstrip('/') if isinstance(repo_id, str) else repo_id
         self.revision = revision if revision else CODEBASE_VERSION
-        self.root = Path(root) if root is not None else HF_LEROBOT_HOME / repo_id
+        # Use sanitized repo_id for directory path construction
+        self.root = Path(root) if root is not None else HF_LEROBOT_HOME / self.repo_id
 
         try:
             if force_cache_sync:
@@ -311,9 +313,24 @@ class LeRobotDatasetMetadata:
         """Creates metadata for a LeRobotDataset."""
         obj = cls.__new__(cls)
         obj.repo_id = repo_id
-        obj.root = Path(root) if root is not None else HF_LEROBOT_HOME / repo_id
+        # Ensure repo_id is not treated as an absolute path when constructing root directory
+        sanitized_repo_id = repo_id.lstrip('/') if isinstance(repo_id, str) else repo_id
+        obj.root = Path(root) if root is not None else HF_LEROBOT_HOME / sanitized_repo_id
 
-        obj.root.mkdir(parents=True, exist_ok=False)
+        try:
+            # Create directory with exist_ok=False to maintain original behavior
+            obj.root.mkdir(parents=True, exist_ok=False)
+        except OSError as e:
+            if e.errno == 30:  # Read-only file system error
+                # Fall back to a user-writable location in the home directory
+                import os
+                home_dir = Path(os.path.expanduser("~"))
+                fallback_dir = home_dir / "lerobot_datasets" / sanitized_repo_id
+                fallback_dir.mkdir(parents=True, exist_ok=True)
+                obj.root = fallback_dir
+                print(f"Warning: Unable to write to {obj.root}. Using {fallback_dir} instead.")
+            else:
+                raise  # Re-raise other types of OSErrors
 
         # TODO(aliberts, rcadene): implement sanity check for features
         features = {**features, **DEFAULT_FEATURES}
@@ -445,8 +462,10 @@ class LeRobotDataset(torch.utils.data.Dataset):
                 You can also use the 'pyav' decoder used by Torchvision, which used to be the default option, or 'video_reader' which is another decoder of Torchvision.
         """
         super().__init__()
-        self.repo_id = repo_id
-        self.root = Path(root) if root else HF_LEROBOT_HOME / repo_id
+        # Ensure repo_id is a valid Hugging Face format (no leading slashes)
+        self.repo_id = repo_id.lstrip('/') if isinstance(repo_id, str) else repo_id
+        # Use sanitized repo_id for directory path construction
+        self.root = Path(root) if root else HF_LEROBOT_HOME / self.repo_id
         self.image_transforms = image_transforms
         self.delta_timestamps = delta_timestamps
         self.episodes = episodes
@@ -459,7 +478,19 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.image_writer = None
         self.episode_buffer = None
 
-        self.root.mkdir(exist_ok=True, parents=True)
+        try:
+            self.root.mkdir(exist_ok=True, parents=True)
+        except OSError as e:
+            if e.errno == 30:  # Read-only file system error
+                # Fall back to a user-writable location in the home directory
+                import os
+                home_dir = Path(os.path.expanduser("~"))
+                fallback_dir = home_dir / "lerobot_datasets" / sanitized_repo_id
+                fallback_dir.mkdir(parents=True, exist_ok=True)
+                self.root = fallback_dir
+                print(f"Warning: Unable to write to {self.root}. Using {fallback_dir} instead.")
+            else:
+                raise  # Re-raise other types of OSErrors
 
         # Load metadata
         self.meta = LeRobotDatasetMetadata(

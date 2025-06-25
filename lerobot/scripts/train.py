@@ -53,6 +53,11 @@ from lerobot.configs.train import TrainPipelineConfig
 from lerobot.scripts.eval import eval_policy
 
 
+# Use MPS if available (for Apple Silicon), otherwise fallback to CPU
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+
+
+
 def update_policy(
     train_metrics: MetricsTracker,
     policy: PreTrainedPolicy,
@@ -140,10 +145,13 @@ def train(cfg: TrainPipelineConfig):
         cfg=cfg.policy,
         ds_meta=dataset.meta,
     )
+    policy = policy.to(device) #trying to use gpu if available
+
 
     logging.info("Creating optimizer and scheduler")
     optimizer, lr_scheduler = make_optimizer_and_scheduler(cfg, policy)
-    grad_scaler = GradScaler(device.type, enabled=cfg.policy.use_amp)
+    grad_scaler = GradScaler(enabled=cfg.policy.use_amp)
+
 
     step = 0  # number of policy updates (forward + backward + optim)
 
@@ -202,27 +210,50 @@ def train(cfg: TrainPipelineConfig):
     logging.info("Start offline training on a fixed dataset")
     for _ in range(step, cfg.steps):
         start_time = time.perf_counter()
+
+
+        logging.info("About to fetch next batch from dataloader")  # DEBUG PRINT
         batch = next(dl_iter)
+        logging.info("Fetched batch")  # DEBUG PRINT
         train_tracker.dataloading_s = time.perf_counter() - start_time
 
         for key in batch:
             if isinstance(batch[key], torch.Tensor):
                 batch[key] = batch[key].to(device, non_blocking=True)
+                print(f"Batch keys: {batch.keys()}")
+                
 
-        train_tracker, output_dict = update_policy(
-            train_tracker,
-            policy,
-            batch,
-            optimizer,
-            cfg.optimizer.grad_clip_norm,
-            grad_scaler=grad_scaler,
-            lr_scheduler=lr_scheduler,
-            use_amp=cfg.policy.use_amp,
-        )
+                
+        batch["obs"] = {"VISUAL": batch["observation.images.laptop"]}
+        print(f"Batch VISUAL is on device: {batch['obs']['VISUAL'].device}")
+        print(f"Shape: {batch['obs']['VISUAL'].shape}, Dtype: {batch['obs']['VISUAL'].dtype}")
+
+
+
+
+        logging.info("Calling update_policy")  # DEBUG
+        try:
+            train_tracker, output_dict = update_policy(
+                train_tracker,
+                policy,
+                batch,
+                optimizer,
+                cfg.optimizer.grad_clip_norm,
+                grad_scaler=grad_scaler,
+                lr_scheduler=lr_scheduler,
+                use_amp=cfg.policy.use_amp,
+            )
+            logging.info("Finished update_policy")  # DEBUG
+        except Exception as e:
+            logging.error(f"update_policy crashed: {e}")
+            raise
+
 
         # Note: eval and checkpoint happens *after* the `step`th training update has completed, so we
         # increment `step` here.
         step += 1
+        logging.info(f"Step incremented to {step}")  # DEBUG
+
         train_tracker.step()
         is_log_step = cfg.log_freq > 0 and step % cfg.log_freq == 0
         is_saving_step = step % cfg.save_freq == 0 or step == cfg.steps

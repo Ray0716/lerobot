@@ -1,3 +1,49 @@
+# LeRobot Dataset Recording Fix
+
+This repository contains a fix for the "Read-only file system" error encountered when running the lerobot.record module.
+
+## Problem
+
+When running the lerobot.record module with the dataset.repo_id parameter, the system tries to create a directory at the root level (e.g., `/record-test`), which is typically a read-only location for regular users.
+
+## Solution
+
+The fix involves:
+
+1. Creating a writable directory in the user's home directory for storing the dataset
+2. Adding the `--dataset.root_dir` parameter to specify this writable location
+3. Ensuring the `HF_USER` environment variable is set
+
+## Usage
+
+1. Make the script executable:
+```bash
+chmod +x record_dataset.sh
+```
+
+2. Run the script:
+```bash
+./record_dataset.sh
+```
+
+## Explanation
+
+The original error occurs because:
+
+1. The default dataset root directory is `/` (the root of the file system)
+2. When combined with the repo_id, it tries to create `/record-test`
+3. Most users don't have write permissions to the root directory
+
+The script fixes this by:
+
+1. Creating a directory at `$HOME/lerobot_datasets` where the user has write permissions
+2. Explicitly setting this as the `--dataset.root_dir` parameter
+3. Making sure the `HF_USER` environment variable is set
+
+## Customization
+
+You can modify the `RECORD_DIR` variable in the script to change where the dataset will be stored.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="media/lerobot-logo-thumbnail.png">

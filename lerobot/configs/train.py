@@ -144,12 +144,14 @@ class TrainPipelineConfig(HubMixin):
     ) -> "TrainPipelineConfig":
         model_id = str(pretrained_name_or_path)
         config_file: str | None = None
-        if Path(model_id).is_dir():
+        model_path = Path(model_id)
+        if model_path.is_dir():
             if TRAIN_CONFIG_NAME in os.listdir(model_id):
                 config_file = os.path.join(model_id, TRAIN_CONFIG_NAME)
             else:
-                print(f"{TRAIN_CONFIG_NAME} not found in {Path(model_id).resolve()}")
-        elif Path(model_id).is_file():
+                print(f"{TRAIN_CONFIG_NAME} not found in {model_path.resolve()}")
+        elif model_path.is_file() or model_id.endswith('.json'):
+            # Check both if the file exists and if it looks like a JSON file path
             config_file = model_id
         else:
             try:
